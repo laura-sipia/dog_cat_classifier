@@ -12,8 +12,10 @@ Created on Fri Nov 22 22:46:54 2019
 @author: laura
 """
 
-from keras.models import Sequential
-from keras.layers import Dense, Conv2D, Flatten, MaxPooling2D, GlobalAveragePooling2D, BatchNormalization
+from keras.models import Model
+from keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from keras.applications.mobilenet import MobileNet
+from keras.preprocessing.image import ImageDataGenerator
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
@@ -21,48 +23,16 @@ from tensorflow.keras.utils import to_categorical
 from load_images import load_data
 import os
 
-#create model
-# Best test acc score 0.716 with 4000 samples where 0.2 are test samples
-model = Sequential()
+IMG_SIZE = 128
 
-N_1 = 64 # Number of feature maps in the first convolution
-N_2 = 128 # Number of feature maps in the second convolution
-w, h = 3, 3 # Conv. window size
+aug = ImageDataGenerator(horizontal_flip=True)
 
-model.add(Conv2D(N_1, (w, h), 
-                 input_shape=(64, 64, 3),
-                 activation = 'relu',
-                 padding = 'same'))
-
-model.add(MaxPooling2D(pool_size=(4, 4)))
-
-model.add(BatchNormalization())
-
-model.add(Conv2D(N_2, (w, h),
-                 activation = 'relu',
-                 padding = 'same'))
-
-model.add(GlobalAveragePooling2D())
-
-model.add(BatchNormalization())
-
-#model.add(Flatten())
-
-model.add(Dense(512, activation = 'softmax'))
-
-model.add(Dense(2, activation = 'softmax'))
-
-model.summary()
-
-model.compile(loss='categorical_crossentropy',
-              optimizer='adam',
-              metrics=['accuracy'])
-
-if os.path.exists("X.npy") and os.path.exists("y.npy"):
-    X = np.load("X.npy")
-    y = np.load("y.npy")
+# Load data
+if os.path.exists("X_color_128.npy") and os.path.exists("y_color_128.npy"):
+    X = np.load("X_color_128.npy")
+    y = np.load("y_color_128.npy")
 else:
-    X, y = load_data()
+    X, y = load_data(IMG_SIZE)
 
 print("X shape is: ", X.shape)
 X, y = shuffle(X,y)
@@ -78,4 +48,21 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20)
 y_train = to_categorical(y_train) 
 y_test = to_categorical(y_test)
 
-model.fit(X_train, y_train, epochs=10, steps_per_epoch=10, validation_steps=1,validation_data=(X_test, y_test))
+#create model
+
+base_model = MobileNet(input_shape=(128,128,3), include_top=False, weights='imagenet')
+
+x = GlobalAveragePooling2D() (base_model.output)
+x = Dense(512, activation='relu') (x)
+x = Dropout(0.2) (x)
+x = Dense(2, activation='softmax') (x)
+
+model = Model(inputs=base_model.inputs, outputs=x)
+
+model.summary()
+
+model.compile(loss='categorical_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+
+model.fit_generator(aug.flow(X_train, y_train, batch_size=32), epochs=10, steps_per_epoch=10, validation_steps=1,validation_data=(X_test, y_test))
